@@ -23,6 +23,10 @@
 namespace cura 
 {
 
+	void another_test_func()
+	{
+	}
+
 bool AreaSupport::handleSupportModifierMesh(SliceDataStorage& storage, const SettingsBaseVirtual& mesh, const Slicer* slicer)
 {
     if (!mesh.getSettingBoolean("anti_overhang_mesh") && !mesh.getSettingBoolean("support_mesh"))
