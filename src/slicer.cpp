@@ -12,6 +12,10 @@
 
 namespace cura {
 
+	void added_func()
+	{
+	}
+
 int largest_neglected_gap_first_phase = MM2INT(0.01); //!< distance between two line segments regarded as connected
 int largest_neglected_gap_second_phase = MM2INT(0.02); //!< distance between two line segments regarded as connected
 int max_stitch1 = MM2INT(10.0); //!< maximal distance stitched between open polylines to form polygons
