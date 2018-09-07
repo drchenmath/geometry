@@ -78,6 +78,7 @@ void GCodeExport::preSetup(const MeshGroup* meshgroup)
     }
 
     machine_name = meshgroup->getSettingString("machine_name");
+    machine_buildplate_type = meshgroup->getSettingString("machine_buildplate_type");
 
     layer_height = meshgroup->getSettingInMillimeters("layer_height");
 
@@ -167,6 +168,7 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
             prefix << ";EXTRUDER_TRAIN." << extr_nr << ".NOZZLE.DIAMETER:" << nozzle_size << new_line;
             prefix << ";EXTRUDER_TRAIN." << extr_nr << ".NOZZLE.NAME:" << extruder_attr[extr_nr].nozzle_id << new_line;
         }
+        prefix << ";BUILD_PLATE.TYPE:" << machine_buildplate_type << new_line;
         prefix << ";BUILD_PLATE.INITIAL_TEMPERATURE:" << initial_bed_temp << new_line;
 
         if (print_time)
@@ -174,6 +176,12 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
             prefix << ";PRINT.TIME:" << static_cast<int>(*print_time) << new_line;
         }
 
+        if (total_bounding_box.min.x > total_bounding_box.max.x) //We haven't encountered any movement (yet). This probably means we're command-line slicing.
+        {
+            //Put some small default in there.
+            total_bounding_box.min = Point3(0, 0, 0);
+            total_bounding_box.max = Point3(10, 10, 10);
+        }
         prefix << ";PRINT.SIZE.MIN.X:" << INT2MM(total_bounding_box.min.x) << new_line;
         prefix << ";PRINT.SIZE.MIN.Y:" << INT2MM(total_bounding_box.min.y) << new_line;
         prefix << ";PRINT.SIZE.MIN.Z:" << INT2MM(total_bounding_box.min.z) << new_line;
@@ -195,7 +203,23 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         }
         else if (flavor == EGCodeFlavor::REPRAP || flavor == EGCodeFlavor::MARLIN)
         {
-            prefix << ";Filament used: " << ((filament_used.size() >= 1)? filament_used[0] / (1000 * extruder_attr[0].filament_area) : 0) << "m" << new_line;
+            prefix << ";Filament used: ";
+            if (filament_used.size() > 0)
+            {
+                for (unsigned i = 0; i < filament_used.size(); ++i)
+                {
+                    if (i > 0)
+                    {
+                        prefix << ", ";
+                    }
+                    prefix << filament_used[i] / (1000 * extruder_attr[i].filament_area) << "m";
+                }
+            }
+            else
+            {
+                prefix << "0m";
+            }
+            prefix << new_line;
             prefix << ";Layer height: " << layer_height << new_line;
         }
     }
@@ -730,7 +754,7 @@ void GCodeExport::writeUnretractionAndPrime()
         { // note that BFB is handled differently
             *output_stream << "G11" << new_line;
             //Assume default UM2 retraction settings.
-            if (prime_volume > 0)
+            if (prime_volume != 0)
             {
                 *output_stream << "G1 F" << PrecisionedDouble{1, extruder_attr[current_extruder].last_retraction_prime_speed * 60} << " " << extruder_attr[current_extruder].extruderCharacter << PrecisionedDouble{5, current_e_value} << new_line;
                 currentSpeed = extruder_attr[current_extruder].last_retraction_prime_speed;
@@ -751,7 +775,7 @@ void GCodeExport::writeUnretractionAndPrime()
         }
         extruder_attr[current_extruder].retraction_e_amount_current = 0.0;
     }
-    else if (prime_volume > 0.0)
+    else if (prime_volume != 0.0)
     {
         const double output_e = (relative_extrusion)? prime_volume_e : current_e_value;
         *output_stream << "G1 F" << PrecisionedDouble{1, extruder_attr[current_extruder].last_retraction_prime_speed * 60} << " " << extruder_attr[current_extruder].extruderCharacter;
@@ -987,7 +1011,7 @@ void GCodeExport::writePrimeTrain(double travel_speed)
 
 void GCodeExport::writeFanCommand(double speed)
 {
-    if (currentFanSpeed == speed)
+    if (std::abs(currentFanSpeed - speed) < 0.1)
         return;
     if (speed > 0)
     {
@@ -1123,11 +1147,11 @@ void GCodeExport::writeMaxZFeedrate(double max_z_feedrate)
 {
     if (current_max_z_feedrate != max_z_feedrate)
     {
-        if (getFlavor() == EGCodeFlavor::REPRAP || getFlavor() == EGCodeFlavor::REPETIER)
+        if (getFlavor() == EGCodeFlavor::REPRAP)
         {
             *output_stream << "M203 Z" << PrecisionedDouble{2, max_z_feedrate * 60} << new_line;
         }
-        else
+        else if (getFlavor() != EGCodeFlavor::REPETIER) //Repetier firmware changes the "temperature monitor" to 0 when encountering a M203 command, which is undesired.
         {
             *output_stream << "M203 Z" << PrecisionedDouble{2, max_z_feedrate} << new_line;
         }
